@@ -14,22 +14,37 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential clang lld ccache dpkg-dev debhelper git wget unzip curl python3 pkg-config libssl-dev || true
+          sudo apt-get install -y build-essential clang lld ccache git wget unzip curl python3 pkg-config libssl-dev \
+            dpkg-dev debhelper devscripts perl libplist-utils libbz2-dev || true
           # ldid may not be in apt on all runners; allow failure
+          sudo apt-get install -y ldid || true
 
       - name: Install Theos
         run: |
           git clone --depth=1 https://github.com/theos/theos.git $HOME/theos
+          # clone theos toolchain (contains linux/iphone prebuilt toolchains)
+          git clone --depth=1 https://github.com/theos/toolchain.git $HOME/theos/toolchain || true
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+          echo "PATH=$HOME/theos/toolchain/linux/iphone/bin:$PATH" >> $GITHUB_ENV
+
+      - name: Verify toolchain
+        run: |
+          export THEOS="$HOME/theos"
+          if [ ! -x "$THEOS/toolchain/linux/iphone/bin/clang" ]; then
+            ls -la $THEOS/toolchain || true
+            echo "Toolchain clang not found in $THEOS/toolchain/linux/iphone/bin" && exit 1
+          fi
+          $THEOS/toolchain/linux/iphone/bin/clang --version || true
 
       - name: Build package
         env:
           THEOS: ${{ env.THEOS }}
         run: |
           export THEOS="$HOME/theos"
+          export PATH="$THEOS/toolchain/linux/iphone/bin:$PATH"
           cd $GITHUB_WORKSPACE
           make package -j$(nproc)
 
