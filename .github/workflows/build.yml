@@ -1,0 +1,40 @@
+name: Build AutoRotate
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang lld ccache dpkg-dev debhelper git wget unzip curl python3 pkg-config libssl-dev || true
+          # ldid may not be in apt on all runners; allow failure
+
+      - name: Install Theos
+        run: |
+          git clone --depth=1 https://github.com/theos/theos.git $HOME/theos
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+
+      - name: Build package
+        env:
+          THEOS: ${{ env.THEOS }}
+        run: |
+          export THEOS="$HOME/theos"
+          cd $GITHUB_WORKSPACE
+          make package -j$(nproc)
+
+      - name: Upload .deb artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: autorotate-debs
+          path: packages/*.deb

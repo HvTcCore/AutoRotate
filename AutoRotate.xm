@@ -124,15 +124,25 @@ return FALSE;
 return %orig;
 }
 
-%end
-
-
-%hook UIApplicationRotationFollowingController
--(bool) shouldAutorotate {
-if(kEnabled) {
-return TRUE;
+if((kEnabled) && (kKey2)) {
+    // запретить upside-down для совместимости со старыми вызовами
+    if (arg1 == UIInterfaceOrientationPortraitUpsideDown) {
+        return FALSE;
+    }
+    return TRUE;
 }
 return %orig;
+return TRUE;
+
+// Современный метод для iOS6+ / iOS15 — указывает маску поддерживаемых ориентаций
+-(unsigned long long) supportedInterfaceOrientations {
+if((kEnabled) && (kKey2)) {
+    return UIInterfaceOrientationMaskAllButUpsideDown;
+}
+return %orig;
+}
+
+-(void) setSizesWindowToScene:(bool)arg1 {
 }
 
 -(bool) shouldAutorotateToInterfaceOrientation:(long long)arg1 {
