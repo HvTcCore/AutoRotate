@@ -9,6 +9,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -17,28 +18,46 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential clang lld ccache git wget unzip curl python3 pkg-config \
-            libssl-dev dpkg-dev debhelper fakeroot perl libplist-utils xz-utils lzip libbz2-dev || true
+            libssl-dev dpkg-dev debhelper fakeroot devscripts perl libplist-utils xz-utils bzip2 lzip libbz2-dev || true
           sudo apt-get install -y ldid || true
 
-      - name: Install Theos & toolchain
+      - name: Install Theos & toolchain (try release tarball, fallback to repo)
         run: |
           THEOS="$HOME/theos"
-          git clone --depth=1 https://github.com/theos/theos.git "$THEOS"
-          git clone --depth=1 https://github.com/theos/toolchain.git "$THEOS/toolchain" || true
+          mkdir -p "$THEOS"
+          git clone --depth=1 https://github.com/theos/theos.git "$THEOS" || true
+          # try download prebuilt toolchain tarball from releases
+          TOOLCHAIN_TAR="/tmp/toolchain.tar.xz"
+          curl -fsSL "https://github.com/theos/toolchain/releases/latest/download/toolchain.tar.xz" -o "$TOOLCHAIN_TAR" || true
+          if [ -s "$TOOLCHAIN_TAR" ]; then
+            mkdir -p "$THEOS/toolchain"
+            tar -xJf "$TOOLCHAIN_TAR" -C "$THEOS/toolchain" || true
+          else
+            git clone --depth=1 https://github.com/theos/toolchain.git "$THEOS/toolchain" || true
+          fi
           echo "THEOS=$THEOS" >> $GITHUB_ENV
           echo "$THEOS/toolchain/linux/iphone/bin" >> $GITHUB_PATH
 
-      - name: Verify toolchain
+      - name: Verify toolchain & ensure dm.pl
         run: |
           THEOS="${THEOS:-$HOME/theos}"
-          if [ -x "$THEOS/toolchain/linux/iphone/bin/clang" ]; then
-            "$THEOS/toolchain/linux/iphone/bin/clang" --version || true
+          BIN="$THEOS/toolchain/linux/iphone/bin"
+          if [ -x "$BIN/clang" ]; then
+            "$BIN/clang" --version || true
           else
-            echo "clang in toolchain not found; build may still use system clang"
+            echo "Toolchain clang not found at $BIN/clang — creating fallback symlink to system clang"
+            mkdir -p "$BIN"
+            if command -v clang >/dev/null 2>&1; then
+              ln -sf "$(command -v clang)" "$BIN/clang"
+              ln -sf "$(command -v clang++)" "$BIN/clang++" || true
+            fi
           fi
           if ! command -v dm.pl >/dev/null 2>&1; then
-            echo "dm.pl not found (dpkg-dev) — package building may fail"
+            echo "dm.pl not found — attempting to (re)install dpkg-dev"
+            sudo apt-get update
+            sudo apt-get install -y dpkg-dev || true
           fi
+          command -v dm.pl || true
 
       - name: Build package
         env:
