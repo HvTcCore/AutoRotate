@@ -44,6 +44,48 @@ jobs:
             echo "If the toolchain does not contain prebuilt binaries, add a step to download a prebuilt toolchain tarball from theos/toolchain releases." >&2
           fi
 
+      - name: Download prebuilt Theos toolchain (if missing)
+        run: |
+          export THEOS="$HOME/theos"
+          BIN="$THEOS/toolchain/linux/iphone/bin/clang"
+          if [ -x "$BIN" ]; then
+            echo "clang already present: $BIN"
+            exit 0
+          fi
+          echo "Attempting to find a prebuilt linux/iphone toolchain in theos/toolchain releases..."
+          # query latest release assets for theos/toolchain and pick an asset containing both 'linux' and 'iphone'
+          url=$(curl -s https://api.github.com/repos/theos/toolchain/releases/latest | python3 - <<'PY'
+import sys, json
+data=json.load(sys.stdin)
+for a in data.get('assets',[]):
+    name=a.get('name','')
+    if 'linux' in name.lower() and 'iphone' in name.lower():
+        print(a.get('browser_download_url'))
+        sys.exit(0)
+print('')
+PY
+)
+          if [ -z "$url" ]; then
+            echo "No matching prebuilt toolchain asset found in latest release. Listing releases for manual inspection..." >&2
+            curl -s https://api.github.com/repos/theos/toolchain/releases | python3 - <<'PY'
+import sys, json
+data=json.load(sys.stdin)
+for r in data[:5]:
+    print(r.get('tag_name'), [a.get('name') for a in r.get('assets',[])])
+PY
+            exit 0
+          fi
+          echo "Downloading toolchain from: $url"
+          mkdir -p "$THEOS/toolchain/tmp"
+          wget -qO "$THEOS/toolchain/tmp/toolchain.tar.gz" "$url"
+          tar -xzf "$THEOS/toolchain/tmp/toolchain.tar.gz" -C "$THEOS/toolchain" || true
+          rm -rf "$THEOS/toolchain/tmp"
+          if [ ! -x "$BIN" ]; then
+            echo "Download completed but clang still not found in $THEOS/toolchain/linux/iphone/bin" >&2
+            ls -la "$THEOS/toolchain" || true
+            exit 1
+          fi
+
       - name: Verify toolchain
         run: |
           export THEOS="$HOME/theos"
