@@ -14,19 +14,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install system packages
+      - name: Install system packages (required for theos packaging)
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential clang lld ccache git wget unzip curl python3 pkg-config \
-            libssl-dev dpkg-dev debhelper fakeroot devscripts perl libplist-utils xz-utils bzip2 lzip libbz2-dev || true
-          sudo apt-get install -y ldid || true
+          sudo apt-get install -y \
+            build-essential clang lld ccache git wget unzip curl python3 pkg-config \
+            libssl-dev dpkg-dev debhelper devscripts fakeroot perl libplist-utils xz-utils bzip2 lzip libbz2-dev ldid
 
-      - name: Install Theos & toolchain (try release tarball, fallback to repo)
+      - name: Ensure dm.pl present
+        run: |
+          if ! command -v dm.pl >/dev/null 2>&1; then
+            echo "dm.pl not found — installing dpkg-dev & devscripts"
+            sudo apt-get update
+            sudo apt-get install -y dpkg-dev devscripts || (echo "Failed to install dpkg-dev/devscripts" && exit 1)
+          fi
+          command -v dm.pl || (echo "dm.pl still missing" && ls -la /usr/bin/dm* || true && exit 1)
+
+      - name: Install Theos & toolchain
         run: |
           THEOS="$HOME/theos"
           mkdir -p "$THEOS"
           git clone --depth=1 https://github.com/theos/theos.git "$THEOS" || true
-          # try download prebuilt toolchain tarball from releases
           TOOLCHAIN_TAR="/tmp/toolchain.tar.xz"
           curl -fsSL "https://github.com/theos/toolchain/releases/latest/download/toolchain.tar.xz" -o "$TOOLCHAIN_TAR" || true
           if [ -s "$TOOLCHAIN_TAR" ]; then
@@ -38,26 +48,18 @@ jobs:
           echo "THEOS=$THEOS" >> $GITHUB_ENV
           echo "$THEOS/toolchain/linux/iphone/bin" >> $GITHUB_PATH
 
-      - name: Verify toolchain & ensure dm.pl
+      - name: Verify toolchain & fallback clang
         run: |
           THEOS="${THEOS:-$HOME/theos}"
           BIN="$THEOS/toolchain/linux/iphone/bin"
-          if [ -x "$BIN/clang" ]; then
-            "$BIN/clang" --version || true
-          else
-            echo "Toolchain clang not found at $BIN/clang — creating fallback symlink to system clang"
+          if [ ! -x "$BIN/clang" ]; then
             mkdir -p "$BIN"
             if command -v clang >/dev/null 2>&1; then
               ln -sf "$(command -v clang)" "$BIN/clang"
               ln -sf "$(command -v clang++)" "$BIN/clang++" || true
             fi
           fi
-          if ! command -v dm.pl >/dev/null 2>&1; then
-            echo "dm.pl not found — attempting to (re)install dpkg-dev"
-            sudo apt-get update
-            sudo apt-get install -y dpkg-dev || true
-          fi
-          command -v dm.pl || true
+          "$BIN/clang" --version || true
 
       - name: Build package
         env:
