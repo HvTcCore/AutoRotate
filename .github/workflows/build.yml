@@ -30,6 +30,20 @@ jobs:
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
           echo "PATH=$HOME/theos/toolchain/linux/iphone/bin:$PATH" >> $GITHUB_ENV
 
+      - name: Bootstrap Theos toolchain (download prebuilt toolchains)
+        run: |
+          export THEOS="$HOME/theos"
+          # try known bootstrap scripts shipped with the toolchain repo
+          if [ -f "$THEOS/toolchain/bootstrap.sh" ]; then
+            bash "$THEOS/toolchain/bootstrap.sh" || true
+          elif [ -f "$THEOS/toolchain/bootstrap" ]; then
+            bash "$THEOS/toolchain/bootstrap" || true
+          else
+            echo "No bootstrap script found in $THEOS/toolchain; listing contents:" >&2
+            ls -la "$THEOS/toolchain" || true
+            echo "If the toolchain does not contain prebuilt binaries, add a step to download a prebuilt toolchain tarball from theos/toolchain releases." >&2
+          fi
+
       - name: Verify toolchain
         run: |
           export THEOS="$HOME/theos"
