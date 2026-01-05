@@ -22,14 +22,10 @@ jobs:
             libssl-dev dpkg-dev debhelper devscripts fakeroot perl libplist-utils xz-utils bzip2 lzip libbz2-dev
             sudo apt-get install -y ldid || true
 
-      - name: Ensure dm.pl present
+      - name: NDT
         run: |
-          if ! command -v dm.pl >/dev/null 2>&1; then
-            echo "dm.pl not found — installing dpkg-dev & devscripts"
-            sudo apt-get update
-            sudo apt-get install -y dpkg-dev devscripts || (echo "Failed to install dpkg-dev/devscripts" && exit 1)
-          fi
-          command -v dm.pl || (echo "dm.pl still missing" && ls -la /usr/bin/dm* || true && exit 1)
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev devscripts
 
       - name: Install Theos & toolchain
         run: |
@@ -44,8 +40,10 @@ jobs:
           else
             git clone --depth=1 https://github.com/theos/toolchain.git "$THEOS/toolchain" || true
           fi
+          ls $THEOS/
           echo "THEOS=$THEOS" >> $GITHUB_ENV
           echo "$THEOS/toolchain/linux/iphone/bin" >> $GITHUB_PATH
+          echo PATH=$PATH:$THEOS/bin
 
       - name: Verify toolchain & fallback clang
         run: |
