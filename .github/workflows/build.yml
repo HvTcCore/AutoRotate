@@ -18,30 +18,26 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential clang lld ccache git wget unzip curl python3 pkg-config \
             libssl-dev dpkg-dev debhelper fakeroot perl libplist-utils xz-utils lzip libbz2-dev || true
-          # ldid optional on runners
           sudo apt-get install -y ldid || true
 
-      - name: Install Theos
-        env:
-          THEOS: ${{ runner.home }}/theos
+      - name: Install Theos & toolchain
         run: |
-          git clone --depth=1 https://github.com/theos/theos.git "${THEOS}"
-          # clone toolchain (prebuilt toolchains)
-          git clone --depth=1 https://github.com/theos/toolchain.git "${THEOS}/toolchain" || true
-          echo "THEOS=${THEOS}" >> $GITHUB_ENV
-          echo "${THEOS}/toolchain/linux/iphone/bin" >> $GITHUB_PATH
+          THEOS="$HOME/theos"
+          git clone --depth=1 https://github.com/theos/theos.git "$THEOS"
+          git clone --depth=1 https://github.com/theos/toolchain.git "$THEOS/toolchain" || true
+          echo "THEOS=$THEOS" >> $GITHUB_ENV
+          echo "$THEOS/toolchain/linux/iphone/bin" >> $GITHUB_PATH
 
-      - name: Verify toolchain (informational)
+      - name: Verify toolchain
         run: |
-          export THEOS="${THEOS:-$HOME/theos}"
+          THEOS="${THEOS:-$HOME/theos}"
           if [ -x "$THEOS/toolchain/linux/iphone/bin/clang" ]; then
             "$THEOS/toolchain/linux/iphone/bin/clang" --version || true
           else
-            echo "Warning: clang not found in $THEOS/toolchain/linux/iphone/bin — build may still work if system clang is usable."
+            echo "clang in toolchain not found; build may still use system clang"
           fi
-          # ensure dm.pl (provided by dpkg-dev) exists
           if ! command -v dm.pl >/dev/null 2>&1; then
-            echo "dm.pl not found; dpkg-dev installation may have failed." || true
+            echo "dm.pl not found (dpkg-dev) — package building may fail"
           fi
 
       - name: Build package
