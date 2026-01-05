@@ -9,97 +9,46 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install system dependencies
+      - name: Install system packages
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential clang lld ccache git wget unzip curl python3 pkg-config libssl-dev \
-            dpkg-dev debhelper devscripts perl libplist-utils libbz2-dev || true
-          # ldid may not be in apt on all runners; allow failure
+          sudo apt-get install -y build-essential clang lld ccache git wget unzip curl python3 pkg-config \
+            libssl-dev dpkg-dev debhelper fakeroot perl libplist-utils xz-utils lzip libbz2-dev || true
+          # ldid optional on runners
           sudo apt-get install -y ldid || true
 
       - name: Install Theos
+        env:
+          THEOS: ${{ runner.home }}/theos
         run: |
-          git clone --depth=1 https://github.com/theos/theos.git $HOME/theos
-          # clone theos toolchain (contains linux/iphone prebuilt toolchains)
-          git clone --depth=1 https://github.com/theos/toolchain.git $HOME/theos/toolchain || true
-          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
-          echo "PATH=$HOME/theos/toolchain/linux/iphone/bin:$PATH" >> $GITHUB_ENV
+          git clone --depth=1 https://github.com/theos/theos.git "${THEOS}"
+          # clone toolchain (prebuilt toolchains)
+          git clone --depth=1 https://github.com/theos/toolchain.git "${THEOS}/toolchain" || true
+          echo "THEOS=${THEOS}" >> $GITHUB_ENV
+          echo "${THEOS}/toolchain/linux/iphone/bin" >> $GITHUB_PATH
 
-      - name: Bootstrap Theos toolchain (download prebuilt toolchains)
+      - name: Verify toolchain (informational)
         run: |
-          export THEOS="$HOME/theos"
-          # try known bootstrap scripts shipped with the toolchain repo
-          if [ -f "$THEOS/toolchain/bootstrap.sh" ]; then
-            bash "$THEOS/toolchain/bootstrap.sh" || true
-          elif [ -f "$THEOS/toolchain/bootstrap" ]; then
-            bash "$THEOS/toolchain/bootstrap" || true
+          export THEOS="${THEOS:-$HOME/theos}"
+          if [ -x "$THEOS/toolchain/linux/iphone/bin/clang" ]; then
+            "$THEOS/toolchain/linux/iphone/bin/clang" --version || true
           else
-            echo "No bootstrap script found in $THEOS/toolchain; listing contents:" >&2
-            ls -la "$THEOS/toolchain" || true
-            echo "If the toolchain does not contain prebuilt binaries, add a step to download a prebuilt toolchain tarball from theos/toolchain releases." >&2
+            echo "Warning: clang not found in $THEOS/toolchain/linux/iphone/bin — build may still work if system clang is usable."
           fi
-
-      - name: Download prebuilt Theos toolchain (if missing)
-        run: |
-          export THEOS="$HOME/theos"
-          BIN="$THEOS/toolchain/linux/iphone/bin/clang"
-          if [ -x "$BIN" ]; then
-            echo "clang already present: $BIN"
-            exit 0
+          # ensure dm.pl (provided by dpkg-dev) exists
+          if ! command -v dm.pl >/dev/null 2>&1; then
+            echo "dm.pl not found; dpkg-dev installation may have failed." || true
           fi
-          echo "Attempting to find a prebuilt linux/iphone toolchain in theos/toolchain releases..."
-          # query latest release assets for theos/toolchain and pick an asset containing both 'linux' and 'iphone'
-          url=$(curl -s https://api.github.com/repos/theos/toolchain/releases/latest | python3 - <<'PY'
-import sys, json
-data=json.load(sys.stdin)
-for a in data.get('assets',[]):
-    name=a.get('name','')
-    if 'linux' in name.lower() and 'iphone' in name.lower():
-        print(a.get('browser_download_url'))
-        sys.exit(0)
-print('')
-PY
-)
-          if [ -z "$url" ]; then
-            echo "No matching prebuilt toolchain asset found in latest release. Listing releases for manual inspection..." >&2
-            curl -s https://api.github.com/repos/theos/toolchain/releases | python3 - <<'PY'
-import sys, json
-data=json.load(sys.stdin)
-for r in data[:5]:
-    print(r.get('tag_name'), [a.get('name') for a in r.get('assets',[])])
-PY
-            exit 0
-          fi
-          echo "Downloading toolchain from: $url"
-          mkdir -p "$THEOS/toolchain/tmp"
-          wget -qO "$THEOS/toolchain/tmp/toolchain.tar.gz" "$url"
-          tar -xzf "$THEOS/toolchain/tmp/toolchain.tar.gz" -C "$THEOS/toolchain" || true
-          rm -rf "$THEOS/toolchain/tmp"
-          if [ ! -x "$BIN" ]; then
-            echo "Download completed but clang still not found in $THEOS/toolchain/linux/iphone/bin" >&2
-            ls -la "$THEOS/toolchain" || true
-            exit 1
-          fi
-
-      - name: Verify toolchain
-        run: |
-          export THEOS="$HOME/theos"
-          if [ ! -x "$THEOS/toolchain/linux/iphone/bin/clang" ]; then
-            ls -la $THEOS/toolchain || true
-            echo "Toolchain clang not found in $THEOS/toolchain/linux/iphone/bin" && exit 1
-          fi
-          $THEOS/toolchain/linux/iphone/bin/clang --version || true
 
       - name: Build package
         env:
           THEOS: ${{ env.THEOS }}
         run: |
-          export THEOS="$HOME/theos"
+          export THEOS="${THEOS:-$HOME/theos}"
           export PATH="$THEOS/toolchain/linux/iphone/bin:$PATH"
           cd $GITHUB_WORKSPACE
           make package -j$(nproc)
